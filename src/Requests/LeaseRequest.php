@@ -1,6 +1,6 @@
 <?php
 
-namespace SlaveMarket\Lease;
+namespace SlaveMarket\Requests;
 
 /**
  * Запрос на аренду раба
@@ -9,6 +9,8 @@ namespace SlaveMarket\Lease;
  */
 class LeaseRequest
 {
+    const TIME_FORMAT = 'Y-m-d H:i:s';
+
     /** @var int id хозяина */
     public $masterId;
 
@@ -16,8 +18,8 @@ class LeaseRequest
     public $slaveId;
 
     /** @var string время начала работ Y-m-d H:i:s */
-    public $timeFrom;
+    public $dateTimeFrom;
 
     /** @var string время окончания работ Y-m-d H:i:s */
-    public $timeTo;
+    public $dateTimeTo;
 }

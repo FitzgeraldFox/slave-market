@@ -1,6 +1,8 @@
 <?php
 
-namespace SlaveMarket\Lease;
+namespace SlaveMarket\Responses;
+
+use SlaveMarket\Entities\LeaseContract;
 
 /**
  * Результат операции аренды

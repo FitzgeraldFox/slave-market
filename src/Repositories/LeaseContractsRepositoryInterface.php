@@ -1,13 +1,15 @@
 <?php
 
-namespace SlaveMarket\Lease;
+namespace SlaveMarket\Repositories;
+
+use SlaveMarket\Entities\LeaseContract;
 
 /**
  * Репозиторий договоров аренды
  *
- * @package SlaveMarket\Lease
+ * @package SlaveMarket\Repositories
  */
-interface LeaseContractsRepository
+interface LeaseContractsRepositoryInterface
 {
     /**
      * Возвращает список договоров аренды для раба, в которых заняты часы из указанного периода
@@ -17,5 +19,9 @@ interface LeaseContractsRepository
      * @param string $dateTo Y-m-d
      * @return LeaseContract[]
      */
-    public function getForSlave(int $slaveId, string $dateFrom, string $dateTo) : array;
+    public function getActualBySlaveId(int $slaveId, string $dateFrom, string $dateTo) : array;
+
+    public function deleteByIds(array $contractIds): void;
+
+    public function create(LeaseContract $leaseContract): void;
 }

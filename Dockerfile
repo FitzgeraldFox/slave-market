@@ -1,4 +1,4 @@
-FROM php:7.1-cli
+FROM php:8-cli
 
 # Preparing..
 RUN apt-get update && apt-get install -y curl git
@@ -6,12 +6,13 @@ RUN apt-get update && apt-get install -y curl git
 # Setup extensions
 
 # xdebug
-RUN pecl install xdebug-2.5.5 \
+RUN pecl install xdebug-3.0.1 \
     && docker-php-ext-enable xdebug
 
 # ZIP
 RUN apt-get install -y \
         zlib1g-dev \
+        libzip-dev \
     && docker-php-ext-install zip
 
 # Composer
