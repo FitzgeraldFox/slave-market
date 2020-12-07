@@ -4,8 +4,6 @@ namespace SlaveMarket\Operations;
 
 use SlaveMarket\Calculators\LeaseContractPriceCalculator;
 use SlaveMarket\Entities\LeaseContract;
-use SlaveMarket\Entities\Master;
-use SlaveMarket\Entities\Slave;
 use SlaveMarket\Handlers\LeaseContractOverlapHandler;
 use SlaveMarket\Handlers\TimeRounderHandler;
 use SlaveMarket\Repositories\LeaseContractsRepositoryInterface;
@@ -48,18 +46,19 @@ class LeaseOperation
      */
     public function run(LeaseRequest $request): LeaseResponse
     {
-        $validator = new LeaseOperationValidator($request, $this->mastersRepository, $this->slavesRepository);
+        if (!$request->dateTimeFrom || !$request->dateTimeTo || !$request->slaveId || !$request->masterId) {
+            return $this->returnResponse('Invalid request data: One of required fields not exists');
+        }
+
+        $requestMaster = $this->mastersRepository->getById($request->masterId);
+        $requestSlave  = $this->slavesRepository->getById($request->slaveId);
+
+        $validator = new LeaseOperationValidator($request, $requestMaster, $requestSlave);
         $validatorResponse = $validator->validate();
 
         if ($validatorResponse->errorMsg) {
             return $this->returnResponse($validatorResponse->errorMsg);
         }
-
-        /** @var Master $requestMaster */
-        $requestMaster = $validatorResponse->requestMaster;
-
-        /** @var Slave $requestSlave */
-        $requestSlave = $validatorResponse->requestSlave;
 
         $requestDateFrom = \DateTime::createFromFormat($request::TIME_FORMAT, $request->dateTimeFrom);
         $requestDateTo   = \DateTime::createFromFormat($request::TIME_FORMAT, $request->dateTimeTo);
@@ -117,10 +116,10 @@ class LeaseOperation
 
         $this->contractsRepository->create($leaseContract);
 
-        $this->returnResponse([], $leaseContract);
+        return $this->returnResponse(null, $leaseContract);
     }
 
-    protected function returnResponse(string $errorMsg = null, LeaseContract $leaseContract = null)
+    private function returnResponse(string $errorMsg = null, LeaseContract $leaseContract = null)
     {
         $response = new LeaseResponse;
         if ($leaseContract) {
