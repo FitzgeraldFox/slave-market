@@ -4,5 +4,5 @@ namespace SlaveMarket\Validators\Responses;
 
 abstract class BaseValidatorResponse
 {
-    public string $errorMsg;
+    public ?string $errorMsg = null;
 }

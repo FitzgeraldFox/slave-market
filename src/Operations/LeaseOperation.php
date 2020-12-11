@@ -4,6 +4,8 @@ namespace SlaveMarket\Operations;
 
 use SlaveMarket\Calculators\LeaseContractPriceCalculator;
 use SlaveMarket\Entities\LeaseContract;
+use SlaveMarket\Entities\Master;
+use SlaveMarket\Entities\Slave;
 use SlaveMarket\Handlers\LeaseContractOverlapHandler;
 use SlaveMarket\Handlers\TimeRounderHandler;
 use SlaveMarket\Repositories\LeaseContractsRepositoryInterface;
@@ -46,19 +48,10 @@ class LeaseOperation
      */
     public function run(LeaseRequest $request): LeaseResponse
     {
-        if (!$request->dateTimeFrom || !$request->dateTimeTo || !$request->slaveId || !$request->masterId) {
-            return $this->returnResponse('Invalid request data: One of required fields not exists');
-        }
-
         $requestMaster = $this->mastersRepository->getById($request->masterId);
         $requestSlave  = $this->slavesRepository->getById($request->slaveId);
 
-        $validator = new LeaseOperationValidator($request, $requestMaster, $requestSlave);
-        $validatorResponse = $validator->validate();
-
-        if ($validatorResponse->errorMsg) {
-            return $this->returnResponse($validatorResponse->errorMsg);
-        }
+        $this->validate($request, $requestMaster, $requestSlave);
 
         $requestDateFrom = \DateTime::createFromFormat($request::TIME_FORMAT, $request->dateTimeFrom);
         $requestDateTo   = \DateTime::createFromFormat($request::TIME_FORMAT, $request->dateTimeTo);
@@ -68,44 +61,18 @@ class LeaseOperation
         $requestFromDateTime = $handleResponse->roundedTimeFrom;
         $requestToDateTime   = $handleResponse->roundedTimeTo;
 
-        // Беру по slave_id его массив расписаний
-        $slaveActualContracts           = $this->contractsRepository->getActualBySlaveId($request->slaveId,
-            $requestDateFrom, $requestDateTo);
-        $contractsOverlapHandler
-            = new LeaseContractOverlapHandler(
-                $requestFromDateTime,
-                $requestToDateTime,
-                $request::TIME_FORMAT,
-                $slaveActualContracts,
-            );
+        // Беру по slave_id массив контрактов
+        $slaveActualContracts = $this->getSlaveActualContracts($request, $requestFromDateTime, $requestToDateTime);
+        $intersectContracts   = $this->getIntersectContracts($request, $requestFromDateTime, $requestToDateTime, $slaveActualContracts);
+        $contractMasters      = $this->getContractMasters($slaveActualContracts);
 
-        $contractOverlapHandlerResponse = $contractsOverlapHandler->handle();
-        $intersectContracts             = $contractOverlapHandlerResponse->intersectLeaseContracts;
+        $this->checkContractIntersectsWithExisting($intersectContracts, $contractMasters, $requestMaster, $requestSlave);
 
-        $contractMasterIds = array_column($slaveActualContracts, 'master_id');
-        $contractMasters   = $this->mastersRepository->getByIdList($contractMasterIds);
-
-        foreach ($intersectContracts as $contract) {
-            $contractMaster = $contractMasters[$contract->masterId];
-            if ($contractMaster->VIPLevel >= $requestMaster->VIPLevel) {
-                $this->returnResponse(
-                    sprintf('Slave %s [#%s] cannot be rented because other master %s with higher Vip-level rent his from %s to %s',
-                        $requestSlave->name, $requestSlave->id, $contractMaster->name,
-                        $contract->dateTimeFrom, $contract->dateTimeTo
-                    ),
-                );
-            }
-        }
-
-        $contractIds = array_column($intersectContracts, 'master_id');
-
-        // Если мы можем арендовать рабат (создать договор), и есть пересечения с другими,
+        // Если мы можем арендовать раба (создать договор), и есть пересечения с другими,
         // то аннулируем всех, кто пересёкся с клиентом из запроса
-        $this->contractsRepository->deleteByIds($contractIds);
+        $this->deleteIntersectedContracts($intersectContracts);
 
-        $priceCalculator = new LeaseContractPriceCalculator($requestSlave, $requestMaster, $requestDateFrom,
-            $requestDateTo);
-        $totalPrice      = $priceCalculator->calculate();
+        $totalPrice = $this->calculateContractTotalPrice($requestSlave, $requestMaster, $requestDateFrom, $requestDateTo);
 
         $leaseContract               = new LeaseContract();
         $leaseContract->slaveId      = $requestSlave->id;
@@ -119,7 +86,110 @@ class LeaseOperation
         return $this->returnResponse(null, $leaseContract);
     }
 
-    private function returnResponse(string $errorMsg = null, LeaseContract $leaseContract = null)
+    protected function calculateContractTotalPrice(Slave $requestSlave, Master $requestMaster, \DateTime $requestDateFrom,
+        \DateTime $requestDateTo)
+    {
+        $priceCalculator = new LeaseContractPriceCalculator($requestSlave, $requestMaster, $requestDateFrom,
+            $requestDateTo);
+        return $priceCalculator->calculate();
+    }
+
+    protected function deleteIntersectedContracts(array $intersectContracts)
+    {
+        $contractIds = array_column($intersectContracts, 'master_id');
+        $this->contractsRepository->deleteByIds($contractIds);
+    }
+
+    protected function getContractMasters(array $slaveActualContracts)
+    {
+        $contractMasterIds = array_column($slaveActualContracts, 'master_id');
+        return $this->mastersRepository->getByIdList($contractMasterIds);
+    }
+
+    /**
+     * @param LeaseRequest $request
+     * @param \DateTime $requestDateFrom
+     * @param \DateTime $requestDateTo
+     *
+     * @return LeaseContract[]|array
+     */
+    protected function getSlaveActualContracts(LeaseRequest $request, \DateTime $requestDateFrom, \DateTime $requestDateTo) : array
+    {
+        return $this->contractsRepository->getActualBySlaveId($request->slaveId,
+            $requestDateFrom, $requestDateTo);
+    }
+
+    protected function checkContractIntersectsWithExisting($intersectContracts, $contractMasters, Master $requestMaster, Slave $requestSlave)
+    {
+        foreach ($intersectContracts as $contract) {
+            $contractMaster = $contractMasters[$contract->masterId];
+            if ($contractMaster->VIPLevel >= $requestMaster->VIPLevel) {
+                $this->returnResponse(
+                    sprintf('Slave %s [#%s] cannot be rented because other master %s with higher Vip-level rent his from %s to %s',
+                        $requestSlave->name, $requestSlave->id, $contractMaster->name,
+                        $contract->dateTimeFrom, $contract->dateTimeTo
+                    ),
+                );
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * @param LeaseRequest $request
+     * @param \DateTime $requestDateFrom
+     * @param \DateTime $requestDateTo
+     * @param $slaveActualContracts
+     *
+     * @return LeaseContract[]
+     */
+    protected function getIntersectContracts(
+        LeaseRequest $request,
+        \DateTime $requestDateFrom,
+        \DateTime $requestDateTo,
+        array $slaveActualContracts
+    ) {
+        $contractsOverlapHandler
+            = new LeaseContractOverlapHandler(
+            $requestDateFrom,
+            $requestDateTo,
+            $request::TIME_FORMAT,
+            $slaveActualContracts,
+        );
+
+        $contractOverlapHandlerResponse = $contractsOverlapHandler->handle();
+        return $contractOverlapHandlerResponse->intersectLeaseContracts;
+    }
+
+    /**
+     * @param LeaseRequest $request
+     * @param Master $requestMaster
+     * @param Slave $requestSlave
+     *
+     * @return LeaseResponse
+     */
+    protected function validate(LeaseRequest $request, Master $requestMaster, Slave $requestSlave)
+    {
+        if (!$request->dateTimeFrom || !$request->dateTimeTo || !$request->slaveId || !$request->masterId) {
+            return $this->returnResponse('Invalid request data: One of required fields not exists');
+        }
+
+        $validator = new LeaseOperationValidator($request, $requestMaster, $requestSlave);
+        $validatorResponse = $validator->validate();
+
+        if ($validatorResponse->errorMsg) {
+            return $this->returnResponse($validatorResponse->errorMsg);
+        }
+    }
+
+    /**
+     * @param string|null $errorMsg
+     * @param LeaseContract|null $leaseContract
+     *
+     * @return LeaseResponse
+     */
+    protected function returnResponse(string $errorMsg = null, LeaseContract $leaseContract = null)
     {
         $response = new LeaseResponse;
         if ($leaseContract) {

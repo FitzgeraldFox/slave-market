@@ -15,11 +15,11 @@ interface LeaseContractsRepositoryInterface
      * Возвращает список договоров аренды для раба, в которых заняты часы из указанного периода
      *
      * @param int $slaveId
-     * @param string $dateFrom Y-m-d
-     * @param string $dateTo Y-m-d
-     * @return LeaseContract[]
+     * @param \DateTime $dateFrom Y-m-d
+     * @param \DateTime $dateTo Y-m-d
+     * @return LeaseContract[]|array
      */
-    public function getActualBySlaveId(int $slaveId, string $dateFrom, string $dateTo) : array;
+    public function getActualBySlaveId(int $slaveId, \DateTime $dateFrom, \DateTime $dateTo) : array;
 
     public function deleteByIds(array $contractIds): void;
 

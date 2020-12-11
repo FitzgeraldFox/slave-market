@@ -8,12 +8,12 @@ class LeaseContractRepository implements LeaseContractsRepositoryInterface
 {
     /**
      * @param int $slaveId
-     * @param string $dateFrom
-     * @param string $dateTo
+     * @param \DateTime $dateFrom
+     * @param \DateTime $dateTo
      *
-     * @return LeaseContract[]
+     * @return LeaseContract[]|array
      */
-    public function getActualBySlaveId(int $slaveId, string $dateFrom, string $dateTo): array
+    public function getActualBySlaveId(int $slaveId, \DateTime $dateFrom, \DateTime $dateTo): array
     {}
 
     public function deleteByIds(array $contractIds): void
